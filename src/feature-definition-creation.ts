@@ -11,6 +11,7 @@ import {
     matchSteps,
 } from './validation/step-definition-validation';
 import { applyTagFilters } from './tag-filtering';
+import { ScenarioResultTracker } from './reporting/scenario-result-tracking/ScenarioResultTracker';
 
 export type StepsDefinitionCallbackOptions = {
     defineStep: DefineStepFunction;
@@ -105,6 +106,7 @@ const getTestFunction = (skippedViaTagFilter: boolean, only: boolean, skip: bool
 };
 
 const defineScenario = (
+    feature: ParsedFeature,
     scenarioTitle: string,
     scenarioFromStepDefinitions: ScenarioFromStepDefinitions,
     parsedScenario: ParsedScenario,
@@ -115,12 +117,18 @@ const defineScenario = (
     const testFunction = getTestFunction(parsedScenario.skippedViaTagFilter, only, skip, concurrent);
 
     testFunction(scenarioTitle, () => {
-        return scenarioFromStepDefinitions.steps.reduce((promiseChain, nextStep, index) => {
+        const scenarioResultTracker = new ScenarioResultTracker(feature, scenarioTitle, parsedScenario.lineNumber);
+
+        const stepsPromise = scenarioFromStepDefinitions.steps.reduce((promiseChain, nextStep, index) => {
             const stepArgument = parsedScenario.steps[index].stepArgument;
+            const step = parsedScenario.steps[index];
+            const stepText = step.stepText;
+
             const matches = matchSteps(
-                parsedScenario.steps[index].stepText,
+                stepText,
                 scenarioFromStepDefinitions.steps[index].stepMatcher,
             );
+
             let matchArgs: string[] = [];
 
             if (matches && (matches as RegExpMatchArray).length) {
@@ -129,8 +137,33 @@ const defineScenario = (
 
             const args = [...matchArgs, stepArgument];
 
-            return promiseChain.then(() => nextStep.stepFunction(...args));
+            return promiseChain
+                .then(() => {
+                    scenarioResultTracker.startStep(stepText, matchArgs, step.lineNumber);
+
+                    return Promise.resolve()
+                        .then(() => nextStep.stepFunction(...args))
+                        .then(() => scenarioResultTracker.endStep())
+                        .catch((error: Error) => {
+                            scenarioResultTracker.stepError(error);
+
+                            return Promise.reject({
+                                ...error,
+                                message: `An error occurred while executing step "${stepText}": ${error.message}`,
+                            });
+                        });
+                });
         }, Promise.resolve());
+
+        return stepsPromise
+            .catch((error: Error) => {
+                return scenarioResultTracker
+                    .endScenario()
+                    .then(() => Promise.reject(error));
+            })
+            .then(() => {
+                return scenarioResultTracker.endScenario();
+            });
     });
 };
 
@@ -192,6 +225,7 @@ const createDefineScenarioFunction = (
             }, undefined);
         } else if (parsedScenario) {
             defineScenario(
+                parsedFeature,
                 scenarioTitle,
                 scenarioFromStepDefinitions,
                 parsedScenario,
@@ -202,6 +236,7 @@ const createDefineScenarioFunction = (
         } else if (parsedScenarioOutline) {
             parsedScenarioOutline.scenarios.forEach((scenario) => {
                 defineScenario(
+                    parsedFeature,
                     (scenario.title || scenarioTitle),
                     scenarioFromStepDefinitions,
                     scenario,

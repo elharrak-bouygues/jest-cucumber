@@ -1,13 +1,13 @@
 {
   "name": "jest-cucumber",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "description": "Execute Gherkin scenarios in Jest",
   "main": "dist/src/index.js",
   "typings": "dist/src/index.d.ts",
   "scripts": {
     "build": "tsc",
     "jest": "jest --verbose",
-    "test": "npm run build & npm run lint & jest --color",
+    "test": "npm run build && npm run lint && jest --color",
     "lint": "tslint --project ./"
   },
   "repository": {
@@ -32,9 +32,13 @@
     "typescript": "^3.3.3"
   },
   "dependencies": {
+    "@types/cucumber": "^4.0.5",
+    "@types/fs-extra": "^5.0.5",
     "@types/jest": "^24.0.7",
     "@types/node": "^11.9.4",
     "callsites": "^3.0.0",
+    "cucumber": "^5.1.0",
+    "events": "^3.0.0",
     "gherkin": "^5.0.0",
     "jest": "^24.1.0"
   },
@@ -49,6 +53,10 @@
       "js",
       "ts",
       "tsx"
+    ],
+    "reporters": [
+      "default",
+      "./dist/src/reporting/index.js"
     ]
   }
 }
